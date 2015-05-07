@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<pluglets>
+   <require>
+      <import plugin="com.ibm.xtools.pluglets"/>
+      <import plugin="com.ibm.xtools.modeler.ui"/>
+   </require>
+</pluglets>
