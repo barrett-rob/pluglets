@@ -7,6 +7,8 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 
+import javax.management.OperationsException;
+
 import org.eclipse.emf.common.util.BasicEList;
 import org.eclipse.emf.common.util.EList;
 import org.eclipse.emf.ecore.EObject;
@@ -53,11 +55,8 @@ public class ServiceDropDownProxy extends Pluglet {
 								@Override
 								protected void doExecute() {
 									int i = 0;
-									List<String> keys = new ArrayList<String>(
-											operations.keySet());
-									Collections.sort(keys);
-									for (String key : keys) {
-										OperationImpl oi = operations.get(key);
+									for (OperationImpl oi : dependencies
+											.keySet()) {
 										i = replace(i, oi,
 												dependencies.get(oi),
 												getNewName(oi.getName()));
@@ -160,6 +159,11 @@ public class ServiceDropDownProxy extends Pluglet {
 			copy.applyStereotype(operationSecurity);
 		}
 		copy.setValue(operationSecurity, "skipSecurity", true);
+		Stereotype business = copy.getAppliedStereotype("Services::Business");
+		if (business == null) {
+			business = copy.getApplicableStereotype("Services::Business");
+			copy.applyStereotype(business);
+		}
 		// re-point references from old to new
 		IdentityHashMap<NamedElement, Object> clients = new IdentityHashMap<NamedElement, Object>();
 		IdentityHashMap<NamedElement, Object> suppliers = new IdentityHashMap<NamedElement, Object>();
@@ -251,7 +255,6 @@ public class ServiceDropDownProxy extends Pluglet {
 	}
 
 	private final IdentityHashMap<OperationImpl, List<DependencyImpl>> dependencies = new IdentityHashMap<OperationImpl, List<DependencyImpl>>();
-	private final LinkedHashMap<String, OperationImpl> operations = new LinkedHashMap<String, OperationImpl>();
 
 	private void processOperationImpl(DependencyImpl di, OperationImpl oi) {
 		String name = oi.getName();
@@ -262,11 +265,10 @@ public class ServiceDropDownProxy extends Pluglet {
 		if (!service.getModel().getName().startsWith("Module-2")) {
 			return;
 		}
-		if (!operations.containsKey(oi)) {
+		if (!dependencies.containsKey(oi)) {
 			dependencies.put(oi, new ArrayList<DependencyImpl>());
 		}
 		dependencies.get(oi).add(di);
-		operations.put(service.getName() + ":" + name, oi);
 	}
 
 	private ClassImpl getService(OperationImpl oi) {
