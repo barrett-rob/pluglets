@@ -62,8 +62,8 @@ public class ServiceDropDownProxy extends Pluglet {
 												dependencies.get(oi),
 												getNewName(oi.getName()));
 									}
-									if (1 == 1)
-										throw new RuntimeException("stop");
+									// if (1 == 1)
+									// throw new RuntimeException("stop");
 								}
 							});
 				}
@@ -89,40 +89,47 @@ public class ServiceDropDownProxy extends Pluglet {
 		ClassImpl oiOrchestrator = (ClassImpl) service
 				.getOwnedMember(oiOrchestratorName);
 		if (oiOrchestrator == null) {
-			out.println("*** no orchestrator found for " + service.getName()
+			out.println("EE *** no orchestrator found for " + service.getName()
 					+ ":" + oi.getName());
 			return i;
 		}
 		ClassImpl copyOrchestrator = (ClassImpl) EcoreUtil.copy(oiOrchestrator);
 		copyOrchestrator.setName(service.getName() + capitalise(newName)
 				+ "Orchestrator");
-		service.createNestedClassifier(copyOrchestrator.getName(),
-				copyOrchestrator.eClass());
+		if (service.getNestedClassifier(copyOrchestrator.getName()) != null) {
+			out.println("EE *** orchestrator already exists: "
+					+ copyOrchestrator.getName());
+		}
+		copyOrchestrator = (ClassImpl) service.createNestedClassifier(
+				copyOrchestrator.getName(), copyOrchestrator.eClass());
 		for (InterfaceRealization ir : oiOrchestrator
 				.getInterfaceRealizations()) {
-			out.println("*** realisation: " + ir);
 			copyOrchestrator.createInterfaceRealization(ir.getName(), ir
 					.getContract());
 		}
-		// sequence
+		// collaboration
 		String oiCollaborationName = service.getName()
 				+ capitalise(oi.getName()) + "Sequence";
 		CollaborationImpl oiCollaboration = (CollaborationImpl) service
 				.getOwnedMember(oiCollaborationName);
 		if (oiOrchestrator == null) {
-			out.println("*** no collaboration found for " + service.getName()
-					+ ":" + oi.getName());
+			out.println("EE *** no collaboration found for "
+					+ service.getName() + ":" + oi.getName());
 			return i;
 		}
 		CollaborationImpl copyCollaboration = (CollaborationImpl) EcoreUtil
 				.copy(oiCollaboration);
 		copyCollaboration.setName(service.getName() + capitalise(newName)
 				+ "Sequence");
-		service.createNestedClassifier(copyCollaboration.getName(),
-				copyCollaboration.eClass());
+		copyCollaboration = (CollaborationImpl) service.createNestedClassifier(
+				copyCollaboration.getName(), copyCollaboration.eClass());
 		for (Property p : oiCollaboration.getOwnedAttributes()) {
-			out.println("*** property: " + p);
-			copyCollaboration.createOwnedAttribute(p.getName(), p.getType());
+			Property created = copyCollaboration.createOwnedAttribute(p
+					.getName(), p.getType());
+			if (created.getType() != null
+					&& created.getType().equals(oiOrchestrator)) {
+				created.setType(copyOrchestrator);
+			}
 		}
 		// create new operation
 		Parameter oiResult = oi.getReturnResult();
