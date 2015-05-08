@@ -1,25 +1,31 @@
 package com.abb.pluglet.servicedropdownproxy;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
 
 import org.eclipse.emf.common.util.BasicEList;
 import org.eclipse.emf.common.util.EList;
 import org.eclipse.emf.ecore.EObject;
+import org.eclipse.emf.ecore.util.EcoreUtil;
 import org.eclipse.emf.transaction.RecordingCommand;
 import org.eclipse.emf.transaction.TransactionalEditingDomain;
 import org.eclipse.uml2.uml.DirectedRelationship;
 import org.eclipse.uml2.uml.Element;
+import org.eclipse.uml2.uml.InterfaceRealization;
 import org.eclipse.uml2.uml.NamedElement;
 import org.eclipse.uml2.uml.Operation;
 import org.eclipse.uml2.uml.Package;
 import org.eclipse.uml2.uml.Parameter;
 import org.eclipse.uml2.uml.ParameterDirectionKind;
+import org.eclipse.uml2.uml.Property;
 import org.eclipse.uml2.uml.Stereotype;
 import org.eclipse.uml2.uml.Type;
 import org.eclipse.uml2.uml.internal.impl.ClassImpl;
+import org.eclipse.uml2.uml.internal.impl.CollaborationImpl;
 import org.eclipse.uml2.uml.internal.impl.DependencyImpl;
 import org.eclipse.uml2.uml.internal.impl.ModelImpl;
 import org.eclipse.uml2.uml.internal.impl.OperationImpl;
@@ -47,18 +53,17 @@ public class ServiceDropDownProxy extends Pluglet {
 								@Override
 								protected void doExecute() {
 									int i = 0;
-									for (OperationImpl oi : operations.keySet()) {
-										String oldName = oi.getName();
-										String newName = getNewName(oldName);
-										NamedElement service = getService(oi);
-										out.println(++i + ":\t"
-												+ service.getName() + ":\t"
-												+ oldName + "() -> "
-												+ operations.get(oi).size()
-												+ " usages, replacing with "
-												+ newName + "()");
-										replace(oi, operations.get(oi), newName);
+									List<String> keys = new ArrayList<String>(
+											operations.keySet());
+									Collections.sort(keys);
+									for (String key : keys) {
+										OperationImpl oi = operations.get(key);
+										i = replace(i, oi,
+												dependencies.get(oi),
+												getNewName(oi.getName()));
 									}
+									if (1 == 1)
+										throw new RuntimeException("stop");
 								}
 							});
 				}
@@ -75,8 +80,50 @@ public class ServiceDropDownProxy extends Pluglet {
 		return sb.toString();
 	}
 
-	private void replace(OperationImpl oi, List<DependencyImpl> dis,
+	private int replace(int i, OperationImpl oi, List<DependencyImpl> dis,
 			String newName) {
+		ClassImpl service = getService(oi);
+		// orchestrator
+		String oiOrchestratorName = service.getName()
+				+ capitalise(oi.getName()) + "Orchestrator";
+		ClassImpl oiOrchestrator = (ClassImpl) service
+				.getOwnedMember(oiOrchestratorName);
+		if (oiOrchestrator == null) {
+			out.println("*** no orchestrator found for " + service.getName()
+					+ ":" + oi.getName());
+			return i;
+		}
+		ClassImpl copyOrchestrator = (ClassImpl) EcoreUtil.copy(oiOrchestrator);
+		copyOrchestrator.setName(service.getName() + capitalise(newName)
+				+ "Orchestrator");
+		service.createNestedClassifier(copyOrchestrator.getName(),
+				copyOrchestrator.eClass());
+		for (InterfaceRealization ir : oiOrchestrator
+				.getInterfaceRealizations()) {
+			out.println("*** realisation: " + ir);
+			copyOrchestrator.createInterfaceRealization(ir.getName(), ir
+					.getContract());
+		}
+		// sequence
+		String oiCollaborationName = service.getName()
+				+ capitalise(oi.getName()) + "Sequence";
+		CollaborationImpl oiCollaboration = (CollaborationImpl) service
+				.getOwnedMember(oiCollaborationName);
+		if (oiOrchestrator == null) {
+			out.println("*** no collaboration found for " + service.getName()
+					+ ":" + oi.getName());
+			return i;
+		}
+		CollaborationImpl copyCollaboration = (CollaborationImpl) EcoreUtil
+				.copy(oiCollaboration);
+		copyCollaboration.setName(service.getName() + capitalise(newName)
+				+ "Sequence");
+		service.createNestedClassifier(copyCollaboration.getName(),
+				copyCollaboration.eClass());
+		for (Property p : oiCollaboration.getOwnedAttributes()) {
+			out.println("*** property: " + p);
+			copyCollaboration.createOwnedAttribute(p.getName(), p.getType());
+		}
 		// create new operation
 		Parameter oiResult = oi.getReturnResult();
 		EList<String> names = new BasicEList<String>();
@@ -88,7 +135,6 @@ public class ServiceDropDownProxy extends Pluglet {
 			names.add(p.getName());
 			types.add(p.getType());
 		}
-		ClassImpl service = getService(oi);
 		Operation copy = service.createOwnedOperation(newName, names, types);
 		Parameter copyReturnResult = copy.createReturnResult(
 				oiResult.getName(), oiResult.getType());
@@ -128,6 +174,18 @@ public class ServiceDropDownProxy extends Pluglet {
 			di.getSuppliers().clear();
 			di.getSuppliers().add(copy);
 		}
+		i += 1;
+		out.println(i + ":\t" + service.getName() + ":\t" + oi.getName()
+				+ "() -> " + dis.size() + " usages, replacing with " + newName
+				+ "()");
+		return i;
+	}
+
+	private String capitalise(String s) {
+		StringBuilder sb = new StringBuilder();
+		sb.append(s.substring(0, 1).toUpperCase());
+		sb.append(s.substring(1));
+		return sb.toString();
 	}
 
 	private void process(ModelImpl mi) {
@@ -185,20 +243,23 @@ public class ServiceDropDownProxy extends Pluglet {
 		}
 	}
 
-	private final IdentityHashMap<OperationImpl, List<DependencyImpl>> operations = new IdentityHashMap<OperationImpl, List<DependencyImpl>>();
+	private final IdentityHashMap<OperationImpl, List<DependencyImpl>> dependencies = new IdentityHashMap<OperationImpl, List<DependencyImpl>>();
+	private final LinkedHashMap<String, OperationImpl> operations = new LinkedHashMap<String, OperationImpl>();
 
 	private void processOperationImpl(DependencyImpl di, OperationImpl oi) {
 		String name = oi.getName();
 		if (name.toLowerCase().contains("dropdown")) {
 			return;
 		}
-		if (oi.getModel().getName().toLowerCase().matches("m2\\d\\d\\d")) {
+		ClassImpl service = getService(oi);
+		if (!service.getModel().getName().startsWith("Module-2")) {
 			return;
 		}
 		if (!operations.containsKey(oi)) {
-			operations.put(oi, new ArrayList<DependencyImpl>());
+			dependencies.put(oi, new ArrayList<DependencyImpl>());
 		}
-		operations.get(oi).add(di);
+		dependencies.get(oi).add(di);
+		operations.put(service.getName() + ":" + name, oi);
 	}
 
 	private ClassImpl getService(OperationImpl oi) {
